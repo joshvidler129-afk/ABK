@@ -162,6 +162,23 @@ KSU_BRANCH="${KSU_BRANCH:?KSU_BRANCH is required}"
 CUSTOM_REF="${CUSTOM_REF:-}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
+validate_custom_ref() {
+  local ref="$1"
+
+  [ -n "$ref" ] || {
+    echo "::error::KSU 分支为 Custom(自定义) 时，custom_ref 不能为空。" >&2
+    exit 1
+  }
+
+  case "$ref" in
+    /storage/*|/sdcard/*|/data/*|/mnt/*|/tmp/*|/var/*|/etc/*|/system/*|file://*)
+      echo "::error::custom_ref 不能使用 Android 本地文件系统路径: ${ref}" >&2
+      echo "::error::请提供 GitHub 分支名、标签、提交 SHA 或 'branch:n' 形式，例如 main、v1.2.3、<sha> 或 main:3。" >&2
+      exit 1
+      ;;
+  esac
+}
+
 # Pin stable builds to the latest usable commit on each manager's main branch
 # (managers publish no dedicated "stable" branch). Refresh monthly: pick the newest
 # commit that has a successful build-manager run AND whose kernel source still matches
@@ -248,6 +265,8 @@ SUKISU_CUSTOM_REF=""
 RESUKISU_CUSTOM_REF=""
 
 if [ "$KSU_BRANCH" = "Custom(自定义)" ]; then
+  validate_custom_ref "$CUSTOM_REF"
+
   if [[ "$CUSTOM_REF" =~ ^([A-Za-z0-9._/-]+):([0-9]+)$ ]]; then
     branch="${BASH_REMATCH[1]}"
     nabe="${BASH_REMATCH[2]}"
