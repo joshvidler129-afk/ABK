@@ -43,6 +43,15 @@ def find_ksu_dir(root):
     die("SukiSU source directory not found")
 
 
+def check_for_rejects(root: Path):
+    rejects = sorted(root.rglob("*.rej"))
+    if rejects:
+        die(
+            "SUSFS patching left reject files behind; the patch was only partially applied.\n"
+            + "\n".join(str(path) for path in rejects)
+        )
+
+
 def patch_sucompat_header(path, changed_files):
     original = path.read_text()
     text = original
@@ -188,7 +197,7 @@ int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
     if not modern_layout and "int ksu_handle_stat(int *dfd, struct filename **filename" not in text:
         pattern = re.compile(
             r"(int ksu_handle_stat\(int \*dfd, const char __user \*\*filename_user, int \*flags\)\n"
-            r"\{.*?\n\})\n\nlong ksu_handle_execve_sucompat",
+            r"\{.*?\n\}\)\n\nlong ksu_handle_execve_sucompat",
             re.S,
         )
         match = pattern.search(text)
@@ -1128,6 +1137,16 @@ def verify(ksu_dir):
             "int security_context_to_sid_with_policy(",
             "int security_sid_to_context_with_policy(",
         ),
+        ksu_dir / "feature/selinux_hide.c": (
+            "struct selinux_state fake_state;",
+            "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)",
+            "struct page *fake_status",
+            "bool ksu_selinux_hide_enabled __read_mostly",
+            "bool ksu_selinux_hide_running __read_mostly",
+            "void initialize_fake_status(",
+            "int security_context_to_sid_with_policy(",
+            "int security_sid_to_context_with_policy(",
+        ),
         ksu_dir / "supercall/supercall.c": ("int ksu_handle_sys_reboot",),
     }
     for path, markers in required.items():
@@ -1183,6 +1202,7 @@ def main():
         die("usage: fix_sukisu_susfs.py <kernel-root>")
 
     root = Path(sys.argv[1]).resolve()
+    check_for_rejects(root)
     ksu_dir = find_ksu_dir(root)
     changed_files = []
 
@@ -1205,6 +1225,7 @@ def main():
     patch_selinux_c(ksu_dir / "selinux/selinux.c", changed_files)
     patch_selinux_h(ksu_dir / "selinux/selinux.h", changed_files)
     patch_supercall(ksu_dir / "supercall/supercall.c", changed_files)
+    check_for_rejects(root)
     verify(ksu_dir)
 
     if changed_files:
