@@ -184,12 +184,22 @@ validate_custom_ref() {
 # commit that has a successful build-manager run AND whose kernel source still matches
 # the CI patch layout (see build.yml). Bumped 2026-09 — verify with a Stable dispatch
 # when refreshing, since the manager APK is fetched from that commit's build-manager run.
-OFFICIAL_STABLE_REF="85cab5f841b55bed180c10dfdbe33f876aba7820"
+#
+# OFFICIAL_STABLE_REF must additionally match the KernelSU tree that susfs4ksu's
+# kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch was generated against: the
+# "index <pre>..<post>" lines of that patch name the expected pre-image blobs, and
+# build.yml now aborts the Official SUSFS step on any rejected hunk instead of letting
+# a half-applied patch fail later inside the kernel compile. susfs4ksu re-synced the
+# patch to KernelSU 623eba3e on 2026-09-23; the previous pin (85cab5f8, 2026-09-19)
+# rejected 5 hunks (Kbuild, adb_root.c, sucompat.c, ksud_integration.c, supercall.c).
+OFFICIAL_STABLE_REF="623eba3e092b911a3a7389b7d87622a5835d2f3a"
 SUKISU_STABLE_REF="7755cdb36f63945f286d7b1cab662b42b18f2789"
 RESUKISU_STABLE_REF="6d18926ae6eeb571a04c1ce7552c324d606fa9d8"
 
 # Pin development builds to commits with a successful build-manager run on main.
-OFFICIAL_DEV_REF="33d0c9205df47b6b1b61c25c13afa164b88871d1"
+# Official dev must also satisfy the susfs4ksu baseline above; 08a3b087 is main HEAD
+# as of 2026-09-24 and the SUSFS patch applies to it without rejects.
+OFFICIAL_DEV_REF="08a3b087e49227c8a6731c5f1114998b5e25255b"
 SUKISU_DEV_REF="9fbe8fe8ca90c62c259c5894bf96d02ac31209b9"
 RESUKISU_DEV_REF="246d3e52e667cb72ce8f70c93b70d3b42b100b76"
 SUKISU_REPO="SukiSU-Ultra/SukiSU-Ultra"
