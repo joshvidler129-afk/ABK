@@ -1942,6 +1942,23 @@ jobs:
               fi
               patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
 
+              # 任何被拒绝的 hunk 都说明 KernelSU 源码与 susfs4ksu 补丁的基线不一致。
+              # 半套补丁不会在这里失败，而是在约 10 分钟后以晦涩的编译错误失败
+              # (例如 hook/syscall_event_bridge.c 仍引用已被替换的 sucompat API)，
+              # 所以这里直接终止，并把冲突内容完整打印出来。
+              mapfile -t KSU_REJECTS < <(find ./kernel -type f -name '*.rej' | sort)
+              if [ "${#KSU_REJECTS[@]}" -gt 0 ]; then
+                SUSFS_HEAD="$(git -C "$SUSFS4KSU" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+                echo "::error::10_enable_susfs_for_ksu.patch 在 KernelSU ${RESOLVED_KSU_SHA:-$BRANCH} 上有 ${#KSU_REJECTS[@]} 个文件被拒绝 (susfs4ksu ${SUSFS_HEAD})，终止构建。"
+                for rej in "${KSU_REJECTS[@]}"; do
+                  echo "::error::被拒绝的 hunk: KernelSU/${rej#./}"
+                  echo "----- ${rej#./} -----"
+                  cat "$rej"
+                done
+                echo "::error::请将 .github/scripts/resolve-ksu-ref.sh 的 OFFICIAL_STABLE_REF / OFFICIAL_DEV_REF 更新为 susfs4ksu 补丁对应的 KernelSU 提交 (补丁 index 行的前像 blob)，或在 config/config 中固定与当前 KernelSU 匹配的 susfs4ksu 提交。"
+                exit 1
+              fi
+
               cd ..
               ;;
             "ReSukiSU")

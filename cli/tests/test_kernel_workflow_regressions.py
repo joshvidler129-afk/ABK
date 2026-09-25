@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "build.yml"
 REF_SCRIPT_PATH = ROOT / ".github" / "scripts" / "resolve-ksu-ref.sh"
 KSU_COMPAT_PATH = ROOT / ".github" / "scripts" / "ensure-ksu-compat.py"
+SUKISU_FIXER_PATH = ROOT / ".github" / "scripts" / "fix_sukisu_susfs.py"
 
 
 class KernelWorkflowRegressionTests(unittest.TestCase):
@@ -31,7 +32,7 @@ class KernelWorkflowRegressionTests(unittest.TestCase):
 
     def test_development_refs_are_reachable_successful_main_builds(self):
         expected = {
-            "OFFICIAL_DEV_REF": "33d0c9205df47b6b1b61c25c13afa164b88871d1",
+            "OFFICIAL_DEV_REF": "08a3b087e49227c8a6731c5f1114998b5e25255b",
             "SUKISU_DEV_REF": "9fbe8fe8ca90c62c259c5894bf96d02ac31209b9",
             "RESUKISU_DEV_REF": "246d3e52e667cb72ce8f70c93b70d3b42b100b76",
         }
@@ -41,6 +42,60 @@ class KernelWorkflowRegressionTests(unittest.TestCase):
                     self.ref_script,
                     rf'(?m)^{variable}="{sha}"$',
                 )
+
+    def test_official_stable_ref_matches_susfs_patch_baseline(self):
+        # susfs4ksu regenerated kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+        # against KernelSU 623eba3e (2026-09-23). Older pins reject five hunks and the
+        # kernel compile then dies in hook/syscall_event_bridge.c.
+        self.assertRegex(
+            self.ref_script,
+            r'(?m)^OFFICIAL_STABLE_REF="623eba3e092b911a3a7389b7d87622a5835d2f3a"$',
+        )
+
+    def test_official_susfs_patch_aborts_on_rejected_kernelsu_hunks(self):
+        block = self._step_run_block("应用 SUSFS 补丁")
+        official = block.split('"Official")', 1)[1].split('"ReSukiSU")', 1)[0]
+
+        self.assertIn("patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true", official)
+        self.assertIn("find ./kernel -type f -name '*.rej'", official)
+        self.assertIn('if [ "${#KSU_REJECTS[@]}" -gt 0 ]; then', official)
+        self.assertIn("OFFICIAL_STABLE_REF", official)
+        self.assertIn("exit 1", official)
+        # The guard must run before leaving the KernelSU checkout.
+        self.assertLess(official.index("exit 1"), official.index("cd .."))
+
+    def test_sukisu_fixer_regex_literals_compile(self):
+        import ast
+
+        tree = ast.parse(SUKISU_FIXER_PATH.read_text(encoding="utf-8"))
+        patterns = []
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "re"
+                and node.func.attr in {"compile", "search", "sub", "match", "fullmatch", "findall"}
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                patterns.append((node.lineno, node.args[0].value))
+
+        self.assertTrue(patterns)
+        for lineno, pattern in patterns:
+            with self.subTest(line=lineno):
+                re.compile(pattern)
+
+        legacy_stat_anchor = [p for _, p in patterns if "long ksu_handle_execve_sucompat" in p]
+        self.assertEqual(len(legacy_stat_anchor), 1)
+        sample = (
+            "int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)\n"
+            "{\n    return 0;\n}\n\nlong ksu_handle_execve_sucompat(void)\n"
+        )
+        match = re.compile(legacy_stat_anchor[0], re.S).search(sample)
+        self.assertIsNotNone(match)
+        self.assertTrue(match.group(1).endswith("}"))
 
     def test_resolved_sha_defaults_to_selected_variant_ref(self):
         self.assertIn(

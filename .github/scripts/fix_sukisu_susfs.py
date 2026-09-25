@@ -197,7 +197,7 @@ int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
     if not modern_layout and "int ksu_handle_stat(int *dfd, struct filename **filename" not in text:
         pattern = re.compile(
             r"(int ksu_handle_stat\(int \*dfd, const char __user \*\*filename_user, int \*flags\)\n"
-            r"\{.*?\n\}\)\n\nlong ksu_handle_execve_sucompat",
+            r"\{.*?\n\})\n\nlong ksu_handle_execve_sucompat",
             re.S,
         )
         match = pattern.search(text)
